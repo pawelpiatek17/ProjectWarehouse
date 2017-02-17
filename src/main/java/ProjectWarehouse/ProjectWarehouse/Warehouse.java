@@ -1,5 +1,6 @@
 package ProjectWarehouse.ProjectWarehouse;
 
+import java.util.List;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -28,7 +29,7 @@ public class Warehouse {
 		this.packagesMap = new HashMap<Long, Package>();
 		this.field = new Package[x][y][z];
 		crane = new Crane();
-		history = new StringBuilder(" ");
+		history = new StringBuilder("");
 		packageNumbersList = new ArrayList<Long>();
 	}
 	public int getX() {
@@ -42,6 +43,18 @@ public class Warehouse {
 	}
 	public StringBuilder getHistory() {
 		return history;
+	}
+	
+	public List<Package> getAllPackagesByType(ETypeOfPackage typeOfPackage) {
+		List<Package> list = new ArrayList<Package>();
+		Iterator<Entry<Long, Package>> iterator = packagesMap.entrySet().iterator();
+		while (iterator.hasNext()) {
+			if (iterator.next().getValue().getTypeOfPackage() == typeOfPackage) {
+				list.add(iterator.next().getValue());
+			}
+		}
+		logger.debug("getAllPackagesByType: list size -> " + list.size());
+		return list;
 	}
 	public Package getPackageByNumber(Long packageNumber) {
 		history.delete(0, history.length());
@@ -64,7 +77,7 @@ public class Warehouse {
 		while (packageToLift == null) {
 			indexZ--;
 			packageToLift = field[positionX][positionY][indexZ];
-			logger.debug("getPackageByNumber: package to lift" + packageToLift.toString() );
+			logger.debug("getPackageByNumber: package to lift" + packageToLift );
 		}
 		while(indexZ > -1 && packageToLift != package1) {
 			Position positionForPackageToLift = findPositionForPackage(packageToLift);
@@ -163,7 +176,7 @@ public class Warehouse {
 			packageToLift = field[choosenPosition.getX()][choosenPosition.getY()][indexZ];
 		}
 		boolean placeFound = false;
-		while(packageToLift != choosenPackage) {
+		while(indexZ > -1 && packageToLift != choosenPackage) {
 			firstForLoop:
 			for(int i = 0; i < this.x; i++) {
 				secondForLoop:
@@ -195,16 +208,30 @@ public class Warehouse {
 				}
 			}
 			if (!placeFound) {
+				logger.debug("makePositionForPackage: !placeFound ");
 				Position newBlockedPosition = new Position(packageToLift.getPosition().getX(), packageToLift.getPosition().getY(), packageToLift.getPosition().getZ());
 				blockedPositions.add(newBlockedPosition);
-				makePositionForPackage(packageToLift,blockedPositions);
-				blockedPositions.remove(newBlockedPosition);
+				Position positionFound = makePositionForPackage(packageToLift,blockedPositions);
+				blockedPositions.remove(newBlockedPosition); 
+				if (positionFound != null) {
+					logger.debug("makePositionForPackage: !placeFound -> positionFound = "  + positionFound);
+					debugInfo = String.valueOf(crane.liftPackage(packageToLift));
+					logger.debug("makePositionForPackage: !placeFound  -> crane.liftPackage = " + debugInfo);
+					crane.liftedPackage.setOnTop(true);
+					debugInfo = String.valueOf(crane.movePackage(positionFound.getX(),positionFound.getY(),positionFound.getZ()));
+					logger.debug("makePositionForPackage: making place second else if -> crane.movePackage = " + debugInfo);
+				} else {
+					return null;
+				}
 			}
 			indexZ--;
 			packageToLift = field[choosenPosition.getX()][choosenPosition.getY()][indexZ];
 			logger.debug("makePositionForPackage: making place next loop -> packageToLift = " + packageToLift);
 		}
 		if (packageToLift == choosenPackage) {
+			if((choosenPosition.getZ()+1) == this.z) {
+				return null;
+			}
 			logger.debug("makePositionForPackage packageToLift == choosenPackage -> " + packageToLift);
 			return new Position(choosenPosition.getX(), choosenPosition.getY(), choosenPosition.getZ()+1);
 		}
@@ -222,8 +249,11 @@ public class Warehouse {
 		return pairMax.getKey();
 	}
 	public String addPackage(ETypeOfPackage typeOfPackage, String description, long packageNumber, int priority, int _x ,int _y) {
-		int x = _x - 1;
-		int y = _y - 1;
+		if ((_x >= this.x) || (_y >= this.y)) { 
+			return "Give correct position";
+		}
+		int x = _x;
+		int y = _y;
 		int z = this.z;
 		Date date = new Date();
 		int numberOfShifts = 0;
@@ -233,12 +263,15 @@ public class Warehouse {
 			return "Package number was used before";
 		}
 		for(int i = 0; i < z; i++) {
+			if(i > 0 && field[x][y][i-1].getPriority() > priority) {
+				return "Cant put package with lesser priority on top of the package with higher priority, consider getting some packages off";
+			}
 			if (i == 0 && field[x][y][i] == null) {
 				positionZ = i;
 				add = true;
 				break;
 			}
-			else if (i > 0 && field[x][y][i] == null && field[x][y][i-1].getPriority() <= priority) {
+			else if (field[x][y][i] == null) {
 				positionZ = i;
 				add = true;
 				field[x][y][i-1].setOnTop(false);
@@ -255,7 +288,7 @@ public class Warehouse {
 		package1.setOnTop(true);
 		return "Success";
 	}
-	public class Crane {
+	private class Crane {
 		private Package liftedPackage;
 		public boolean liftPackage(Package package1) {
 			if (liftedPackage == null && package1.isOnTop()) {
@@ -265,7 +298,7 @@ public class Warehouse {
 			}
 			return false;
 		}
-		public boolean movePackage(int x,int y, int z) {
+		private boolean movePackage(int x,int y, int z) {
 			logger.debug("Crane movePackage -> field = " +  field[x][y][z] + " -> [" + x + "," + y + "," + z + "]");
 			if (field[x][y][z] == null && liftedPackage != null) {
 				field[liftedPackage.getPosition().getX()][liftedPackage.getPosition().getY()][liftedPackage.getPosition().getZ()] = null;
